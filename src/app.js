@@ -5,12 +5,25 @@ import webhookRouter from './routes/webhook.routes.js';
 
 const app = express();
 
-// Middlewares obligatorios para Express y Meta Webhooks
+// Middlewares obligatorios para Express y Meta Webhooks// Middlewares
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rutas
-app.use('/api', healthRouter);
+// LOG GLOBAL PARA INTERCEPTAR TODO
+app.use((req, res, next) => {
+    console.log(`\n======================================`);
+    console.log(`[GLOBAL LOG] PETICIÓN ENTRANTE`);
+    console.log(`Método: ${req.method}`);
+    console.log(`URL: ${req.originalUrl}`);
+    console.log(`Headers:`, JSON.stringify(req.headers, null, 2));
+    if (req.method === 'POST') {
+        console.log(`Body:`, JSON.stringify(req.body, null, 2));
+    }
+    console.log(`======================================\n`);
+    next();
+});
+
+// Rutasapp.use('/api', healthRouter);
 app.use('/privacy', privacyRouter);
 app.use('/webhook', webhookRouter);
 
