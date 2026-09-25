@@ -28,6 +28,10 @@ router.get('/', (req, res) => {
 
 // POST /webhook (Recepción de mensajes)
 router.post('/', async (req, res) => {
+  console.log(`📡 WEBHOOK RECIBIDO: ${req.method} ${req.originalUrl}`);
+  console.log('🚨🚨🚨 POST /webhook RECIBIDO 🚨🚨🚨');
+  console.log('📦 BODY RECIBIDO:', JSON.stringify(req.body, null, 2));
+
   // 1. Responder 200 inmediatamente a Meta (evita reintentos innecesarios)
   res.status(200).send('EVENT_RECEIVED');
 
