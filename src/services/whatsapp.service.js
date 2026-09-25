@@ -18,12 +18,13 @@ export async function sendWhatsAppMessage(to, text) {
       throw new Error('Faltan las credenciales de WhatsApp en el archivo .env (WHATSAPP_PHONE_ID o WHATSAPP_TOKEN)');
     }
 
-    const url = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
+    const url = `https://graph.facebook.com/v26.0/${phoneId}/messages`;
     
     const body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: to,
+      // Meta entrega el remitente sin "+" en message.from. Se reenvia sin modificarlo.
+      to,
       type: 'text',
       text: { 
         body: text 
@@ -42,7 +43,10 @@ export async function sendWhatsAppMessage(to, text) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ Error devuelto por la API de Meta:', data);
+      console.error('❌ Error al enviar mensaje a Meta:', {
+        status: response.status,
+        body: data,
+      });
       throw new Error(`Error en la API de Meta: ${data.error?.message || 'Error desconocido'}`);
     }
 
