@@ -41,6 +41,13 @@ export async function processUserMessage(phoneNumber, incomingText) {
   const { state, tempData } = conversation;
 
   // ============================================================
+  // Si el usuario es nuevo (o no tiene estado) y no escribió "hola" ni "menu"
+  // ============================================================
+  if (state === 'MENU' && !['1', '2', '3', '4', 'consulta', 'consultas', 'iniciar consulta', 'turno', 'turnos', 'agendar', 'abogado', 'hablar con un abogado', 'horarios', 'ubicacion', 'horarios y ubicacion'].includes(normalizedText)) {
+      return mensajeMenuPrincipal();
+  }
+
+  // ============================================================
   // MAQUINA DE ESTADOS
   // ============================================================
   switch (state) {
@@ -263,7 +270,8 @@ function manejarOpcionMenu(phoneNumber, normalizedText) {
              `Escribí *MENU* para volver al inicio.`;
 
     default:
-      return mensajeMenuPrincipal();
+      return `⚠️ Lo siento, esa opción no se encuentra vigente o no la entendí.\n\n` +
+             `Por favor, escribí un *número del 1 al 4* o la palabra *MENU* para ver las opciones disponibles.`;
   }
 }
 
