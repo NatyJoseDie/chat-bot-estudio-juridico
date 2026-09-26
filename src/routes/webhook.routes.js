@@ -44,9 +44,10 @@ router.post('/', async (req, res) => {
         const messages = value.messages ?? [];
 
         for (const message of messages) {
+          const senderPhone = message.from;
+
           // Solo procesar si es un mensaje de texto
           if (message.type === 'text') {
-            const senderPhone = message.from;
             const messageText = message.text?.body ?? '';
 
             console.log(`📩 Mensaje entrante de ${senderPhone}: "${messageText}"`);
@@ -60,6 +61,16 @@ router.post('/', async (req, res) => {
               await sendWhatsAppMessage(senderPhone, botReply);
             } catch (error) {
               console.error(`⚠️ Error al procesar el mensaje de ${senderPhone}:`, error);
+            }
+          } else {
+            // Manejar mensajes que no sean de texto (audios, imágenes, documentos, etc.)
+            console.log(`📩 Mensaje multimedia (${message.type}) ignorado de ${senderPhone}`);
+            
+            try {
+              const botReply = `🤖 *Estudio Escobar & Asociados*\n\nPor el momento, mi asistente virtual solo puede comprender *mensajes de texto*.\n\nPor favor, escribí tu consulta usando texto para que pueda ayudarte.`;
+              await sendWhatsAppMessage(senderPhone, botReply);
+            } catch (error) {
+              console.error(`⚠️ Error al enviar respuesta de multimedia a ${senderPhone}:`, error);
             }
           }
         }
