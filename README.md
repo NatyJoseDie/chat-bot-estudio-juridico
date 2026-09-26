@@ -268,7 +268,9 @@ node test-flujo-turno.js
 | ✅ HECHO | **Paso de fecha y horario**: parseador inteligente de texto libre ("Lunes 30/09 10hs", "mañana tarde", "Viernes 11am", etc.) con timezone Argentina. |
 | ✅ HECHO | **Google Calendar Service Account**: creación automática de evento "⚖️ Turno - Nombre" + Google Meet + recordatorios 24hs/1hs antes. |
 | ✅ HECHO | **Campos Supabase**: `fecha_turno` (ISO timestamp) + `google_event_id` se guardan en la tabla `turnos`. |
-| ✅ HECHO | **Mail HTML premium**: incluye Tipo de consulta, Franja elegida por el cliente, botón azul a Google Calendar y botón verde a Meet. |
+| ✅ HECHO | **Manejo de mensajes multimedia**: Detección de audios/imágenes y respuesta pidiendo texto. |
+| ✅ HECHO | **UX Avanzada**: Timeout de inactividad (24h) y aviso dinámico de "Fuera de horario comercial". |
+| ✅ HECHO | **Flujo de cancelación**: Submenú de turnos + alerta inmediata por email al estudio. |
 
 ---
 
@@ -277,6 +279,7 @@ node test-flujo-turno.js
 | Prioridad | Tarea |
 |-----------|-------|
 | 🔴 ALTA  | Configurar credenciales reales de Meta WhatsApp + tunel HTTPS (ngrok/cloudflared) → probar con WhatsApp real |
+| 🔴 ALTA  | Implementar "Mensajes Proactivos" (Notificaciones HSM/Templates): Cron job que lea Supabase y envíe recordatorio 24hs antes del turno. |
 | 🟡 MEDIA | Integrar Mercado Pago: generar link de seña al confirmar turno → guardar `mp_pago_id` y `monto` en tabla `pagos` |
 | 🟡 MEDIA | Verificar dominio en Resend → cambiar `RESEND_FROM_EMAIL` de `onboarding@resend.dev` a `noreply@estudioescobaryasociados.com` |
 | 🟡 MEDIA | Enviar mail al cliente también (no solo al estudio) con confirmación de turno + link GCAL |
@@ -289,6 +292,15 @@ node test-flujo-turno.js
 ## 📝 Changelog de avances
 
 > **Registro de modificaciones importantes - actualizar después de cada avance**
+
+### 2026-09-26 - Etapa 4: UX, Manejo de Errores y Cancelación
+- ✅ **Manejo de mensajes multimedia**: El bot detecta cuando el usuario envía un audio, imagen, sticker o documento (`message.type !== 'text'`), ignora el procesamiento normal y responde automáticamente avisando que por ahora solo comprende mensajes de texto.
+- ✅ **Timeout de inactividad de 24hs**: Se mejoró el gestor de estados en memoria (`conversationState.service.js`). Ahora cada interacción actualiza un timestamp `lastUpdated`. Si un usuario abandona la conversación a la mitad y vuelve a escribir después de 24 horas, el sistema reinicia automáticamente su sesión al menú principal para evitar que quede "trabado" en pasos antiguos.
+- ✅ **Manejo de Horarios Comerciales**: Se implementó una función `esFueraDeHorario()` que detecta (usando la zona horaria `America/Buenos_Aires`) si es fin de semana o si son horas fuera de la franja 09:00 - 18:00hs. Si el usuario inicia chat en esos horarios, el bot añade *solo en el mensaje inicial de bienvenida* un aviso recordando el horario de atención humana.
+- ✅ **Flujo de Cancelación de Turnos**: 
+  - La Opción 2 del Menú Principal ahora es un Submenú ("Gestión de Turnos") con dos opciones: A) Agendar nuevo, B) Cancelar existente.
+  - Al elegir cancelar, el bot solicita el nombre completo.
+  - Se agregó la función `sendCancellationEmail()` en `email.service.js` que dispara una alerta por correo electrónico al Estudio Jurídico con un recuadro rojo avisando de la solicitud de cancelación, para que los asesores liberen la agenda manualmente.
 
 ### 2026-09-24 - Etapa 3: Selección de Turno + Google Calendar
 - ✅ Nuevo estado `ESPERANDO_FECHA_HORA` agregado a la máquina (4 estados en total)
