@@ -31,7 +31,7 @@ export async function processUserMessage(phoneNumber, incomingText) {
   // ============================================================
   // COMANDO GLOBAL: Volver al menú principal en cualquier momento
   // ============================================================
-  if (normalizedText === 'menu' || normalizedText === '0') {
+  if (['menu', '0', 'hola', 'buenas', 'buen dia', 'buen día', 'buenas tardes', 'buenas noches'].includes(normalizedText)) {
     resetConversation(phoneNumber);
     return mensajeMenuPrincipal();
   }
