@@ -15,7 +15,7 @@ import {
 
 import { buscarOCrearCliente } from '../services/clienteService.js';
 import { registrarTurno, actualizarFechaTurno } from '../services/turnoService.js';
-import { sendNewCaseEmail } from '../services/email.service.js';
+import { sendNewCaseEmail, sendCancellationEmail } from '../services/email.service.js';
 import { parseFechaYHora, createCalendarEvent } from '../services/calendar.service.js';
 
 /**
@@ -76,6 +76,52 @@ export async function processUserMessage(phoneNumber, incomingText) {
         return `⚠️ Opción no válida.\n\n` +
                `Escribí el *número* de la opción (del 1 al 5) o la palabra *MENU* para volver atrás.`;
       }
+    }
+
+    // --------------------------------------------------------
+    // ESTADO: SUBMENU_TURNOS
+    // --------------------------------------------------------
+    case 'SUBMENU_TURNOS': {
+      const opcion = normalizedText;
+      if (opcion === 'a' || opcion.includes('agendar') || opcion.includes('nuevo')) {
+        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
+        return `📅 *Agendar Nuevo Turno*\n\n` +
+               `Para agendar una reunión presencial o virtual con la abogada, por favor envianos tu *nombre y apellido completo*.\n\n` +
+               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
+      } else if (opcion === 'b' || opcion.includes('cancelar')) {
+        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE_CANCELACION');
+        return `❌ *Cancelar Turno*\n\n` +
+               `Para procesar la cancelación, por favor indicanos tu *nombre y apellido completo* con el que registraste el turno.\n\n` +
+               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
+      } else {
+        return `⚠️ Opción no válida.\n\n` +
+               `Escribí la letra *A* para agendar o *B* para cancelar (o *MENU* para volver al inicio).`;
+      }
+    }
+
+    // --------------------------------------------------------
+    // ESTADO: ESPERANDO_NOMBRE_CANCELACION
+    // --------------------------------------------------------
+    case 'ESPERANDO_NOMBRE_CANCELACION': {
+      const nombre = incomingText.trim();
+      if (nombre.length < 2) {
+        return `⚠️ Por favor, escribí tu nombre completo (al menos 2 caracteres).\n\nSi querés volver al menú principal, escribí *MENU*.`;
+      }
+
+      // Notificar al estudio internamente (opcionalmente podríamos mandar un mail)
+      try {
+        await sendCancellationEmail(phoneNumber, capitalizar(nombre));
+      } catch (error) {
+        console.error(`⚠️ Error al enviar mail de cancelación para ${phoneNumber}:`, error);
+      }
+      
+      // Por ahora confirmamos la recepción al cliente y reseteamos el flujo
+      resetConversation(phoneNumber);
+      return `✅ *Solicitud Recibida*\n\n` +
+             `Hemos notificado al equipo sobre la cancelación del turno a nombre de *${capitalizar(nombre)}*.\n` +
+             `Un asesor lo procesará a la brevedad para liberar la agenda.\n\n` +
+             `¡Gracias por avisarnos!\n\n` +
+             `Si necesitás algo más, escribí *MENU*.`;
     }
 
     // --------------------------------------------------------
@@ -255,10 +301,12 @@ function manejarOpcionMenu(phoneNumber, normalizedText) {
     case 'turno':
     case 'turnos':
     case 'agendar':
-      setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
-      return `📅 *Solicitud y Gestión de Turnos*\n\n` +
-             `Para agendar una reunión presencial o virtual con la abogada, por favor envianos tu *nombre y apellido completo*.\n\n` +
-             `_(Si deseás cancelar y volver al menú principal, escribí *MENU*)_`;
+      setConversationState(phoneNumber, 'SUBMENU_TURNOS');
+      return `📅 *Gestión de Turnos*\n\n` +
+             `Seleccioná una opción:\n\n` +
+             `*A.* Agendar un nuevo turno\n` +
+             `*B.* Cancelar un turno existente\n\n` +
+             `_(Escribí la *letra* de la opción o *MENU* para volver)_`;
 
     case '3':
     case 'abogado':

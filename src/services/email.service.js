@@ -454,3 +454,43 @@ export async function sendNewCaseEmail(clienteData, turnoData) {
   console.log(`📧 Notificación por mail enviada a ${to} | Categoría: ${categoria.nombre} | Resend ID: ${data?.id}`);
   return data;
 }
+
+/**
+ * Envía un correo notificando al estudio sobre la CANCELACIÓN de un turno.
+ *
+ * @param {string} telefono
+ * @param {string} nombreCliente
+ * @returns {Promise<any>}
+ */
+export async function sendCancellationEmail(telefono, nombreCliente) {
+  const htmlBody = `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+      <div style="background-color: #ef4444; color: white; padding: 20px; text-align: center;">
+        <h2 style="margin: 0; font-size: 20px;">❌ Solicitud de Cancelación de Turno</h2>
+      </div>
+      <div style="padding: 20px;">
+        <p>Un cliente ha solicitado cancelar su turno a través del asistente virtual de WhatsApp.</p>
+        <div style="background-color: #f9fafb; padding: 15px; border-radius: 6px; margin: 15px 0;">
+          <p style="margin: 5px 0;"><strong>👤 Nombre proporcionado:</strong> ${nombreCliente}</p>
+          <p style="margin: 5px 0;"><strong>📱 Teléfono:</strong> +${telefono}</p>
+        </div>
+        <p>Por favor, revisá la agenda (Google Calendar) para liberar el espacio correspondiente.</p>
+        <p style="margin-top: 30px; font-size: 12px; color: #6b7280; text-align: center;">
+          Notificación automática - Asistente Virtual
+        </p>
+      </div>
+    </div>
+  `;
+
+  const { data, error } = await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+    to: process.env.STUDIO_EMAIL,
+    subject: `❌ CANCELACIÓN de turno - ${nombreCliente}`,
+    html: htmlBody,
+  });
+
+  if (error) {
+    throw error;
+  }
+  return data;
+}
