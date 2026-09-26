@@ -28,23 +28,31 @@ import { parseFechaYHora, createCalendarEvent } from '../services/calendar.servi
 export async function processUserMessage(phoneNumber, incomingText) {
   const normalizedText = incomingText.trim().toLowerCase();
 
-  // ============================================================
-  // COMANDO GLOBAL: Volver al menú principal en cualquier momento
-  // ============================================================
-  if (['menu', '0', 'hola', 'buenas', 'buen dia', 'buen día', 'buenas tardes', 'buenas noches'].includes(normalizedText)) {
-    resetConversation(phoneNumber);
-    return mensajeMenuPrincipal();
-  }
-
   // Obtenemos (o inicializamos) el estado actual de la conversación del usuario
   const conversation = getOrCreateConversation(phoneNumber);
   const { state, tempData } = conversation;
 
   // ============================================================
+  // COMANDO GLOBAL: Volver al menú principal en cualquier momento
+  // ============================================================
+  if (['menu', '0', 'hola', 'buenas', 'buen dia', 'buen día', 'buenas tardes', 'buenas noches'].includes(normalizedText)) {
+    resetConversation(phoneNumber);
+    const avisoHorario = esFueraDeHorario() && !tempData.warnedOutOfHours;
+    if (avisoHorario) {
+      setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: true });
+    }
+    return mensajeMenuPrincipal(avisoHorario);
+  }
+
+  // ============================================================
   // Si el usuario es nuevo (o no tiene estado) y no escribió "hola" ni "menu"
   // ============================================================
   if (state === 'MENU' && !['1', '2', '3', '4', 'consulta', 'consultas', 'iniciar consulta', 'turno', 'turnos', 'agendar', 'abogado', 'hablar con un abogado', 'horarios', 'ubicacion', 'horarios y ubicacion'].includes(normalizedText)) {
-      return mensajeMenuPrincipal();
+      const avisoHorario = esFueraDeHorario() && !tempData.warnedOutOfHours;
+      if (avisoHorario) {
+        setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: true });
+      }
+      return mensajeMenuPrincipal(avisoHorario);
   }
 
   // ============================================================
@@ -277,16 +285,26 @@ function manejarOpcionMenu(phoneNumber, normalizedText) {
 
 /**
  * Devuelve el mensaje de bienvenida con el menú principal.
+ * Agrega un prefijo si se escribe fuera del horario comercial, y solo lo hace la primera vez.
+ * @param {boolean} mostrarAvisoFueraHorario Indica si se debe añadir el aviso de fuera de horario.
  * @returns {string}
  */
-function mensajeMenuPrincipal() {
-  return `⚖️ *Estudio Jurídico Escobar & Asociados*\n` +
+function mensajeMenuPrincipal(mostrarAvisoFueraHorario = false) {
+  let mensaje = '';
+  
+  if (mostrarAvisoFueraHorario) {
+    mensaje += `🌙 *Estudio Escobar & Asociados*\nTe recordamos que nuestro horario de atención humana es de Lunes a Viernes de 9:00 a 18:00 hs.\nSin embargo, podés utilizar nuestro asistente virtual las 24hs.\n\n---\n\n`;
+  }
+  
+  mensaje += `⚖️ *Estudio Jurídico Escobar & Asociados*\n` +
          `_Asistencia Legal Especializada_\n\n` +
          `¡Hola! Te damos la bienvenida. Por favor, seleccioná una opción respondiendo con el *número* o la *palabra clave*:\n\n` +
          `1️⃣ *Iniciar Consulta* (Familia y Laboral)\n` +
          `2️⃣ *Agendar / Ver Turnos* (Gestión de citas)\n` +
          `3️⃣ *Hablar con un Abogado* (Atención prioritaria)\n` +
          `4️⃣ *Horarios y Ubicación* (Dirección y mapa)`;
+         
+  return mensaje;
 }
 
 /**
@@ -297,4 +315,24 @@ function mensajeMenuPrincipal() {
 function capitalizar(texto) {
   if (!texto) return '';
   return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
+}
+
+/**
+ * Verifica si la hora actual en Argentina está fuera del horario comercial.
+ * Horario comercial: Lunes a Viernes de 9:00 a 18:00 hs.
+ * @returns {boolean}
+ */
+function esFueraDeHorario() {
+  const options = { timeZone: 'America/Buenos_Aires', hour12: false, hour: 'numeric', weekday: 'numeric' };
+  // Usamos el locale en-US para asegurar que el parsing sea predecible
+  const argTimeStr = new Date().toLocaleString("en-US", { timeZone: "America/Buenos_Aires" });
+  const argDate = new Date(argTimeStr);
+  
+  const day = argDate.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  const hour = argDate.getHours(); // 0 a 23
+
+  const isWeekend = day === 0 || day === 6;
+  const isOutHours = hour < 9 || hour >= 18;
+
+  return isWeekend || isOutHours;
 }
