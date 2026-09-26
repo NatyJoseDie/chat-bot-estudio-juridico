@@ -18,13 +18,23 @@ export async function sendWhatsAppMessage(to, text) {
       throw new Error('Faltan las credenciales de WhatsApp en el archivo .env (WHATSAPP_PHONE_ID o WHATSAPP_TOKEN)');
     }
 
+    // --- INICIO PARCHE TEMPORAL PARA ARGENTINA ---
+    // Si el número empieza con 54911, intentamos responderle al 5411 (sin el 9)
+    // porque Meta a veces registra los números de prueba de Argentina sin el 9.
+    let finalTo = to;
+    if (to.startsWith('549')) {
+      finalTo = to.replace('549', '54');
+      console.log(`[PARCHE] Cambiando destinatario de ${to} a ${finalTo} para evitar error 131030`);
+    }
+    // --- FIN PARCHE TEMPORAL ---
+
     const url = `https://graph.facebook.com/v26.0/${phoneId}/messages`;
     
     const body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       // Meta entrega el remitente sin "+" en message.from. Se reenvia sin modificarlo.
-      to,
+      to: finalTo,
       type: 'text',
       text: { 
         body: text 
