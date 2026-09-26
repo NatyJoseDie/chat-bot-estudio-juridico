@@ -24,7 +24,6 @@ export async function sendWhatsAppMessage(to, text) {
     let finalTo = to;
     if (to.startsWith('549')) {
       finalTo = to.replace('549', '54');
-      console.log(`[PARCHE] Cambiando destinatario de ${to} a ${finalTo} para evitar error 131030`);
     }
     // --- FIN PARCHE TEMPORAL ---
 
