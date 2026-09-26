@@ -45,6 +45,25 @@ export async function processUserMessage(phoneNumber, incomingText) {
   // ============================================================
   switch (state) {
     // --------------------------------------------------------
+    // ESTADO: ESPERANDO_TIPO_CONSULTA
+    // --------------------------------------------------------
+    case 'ESPERANDO_TIPO_CONSULTA': {
+      const opcion = normalizedText;
+      if (['1', '4', 'alimentos', 'laboral'].includes(opcion) || opcion.includes('alimentos') || opcion.includes('laboral') || opcion.includes('despidos')) {
+        setConversationState(phoneNumber, 'MENU');
+        return `✅ *Consulta Gratuita seleccionada*\n` +
+               `Para avanzar con la evaluación de tu caso, ingresá la palabra *TURNO* o responde *2* para completar la ficha y agendar tu cita.`;
+      } else if (['2', '3', '5', 'divorcio', 'separacion', 'regimen', 'comunicacion', 'otros'].some(k => opcion.includes(k) || opcion === k)) {
+        setConversationState(phoneNumber, 'MENU');
+        return `💳 *Consulta Paga seleccionada ($20.000 ARS)*\n` +
+               `El costo cubre la evaluación técnica del caso. Para completar la ficha y recibir el enlace de pago de Mercado Pago, ingresá la palabra *TURNO* o responde *2*.`;
+      } else {
+        return `⚠️ Opción no válida.\n\n` +
+               `Escribí el *número* de la opción (del 1 al 5) o la palabra *MENU* para volver atrás.`;
+      }
+    }
+
+    // --------------------------------------------------------
     // ESTADO: ESPERANDO_NOMBRE
     // --------------------------------------------------------
     case 'ESPERANDO_NOMBRE': {
@@ -205,28 +224,43 @@ function manejarOpcionMenu(phoneNumber, normalizedText) {
     case '1':
     case 'consulta':
     case 'consultas':
-      return `⚖️ *Áreas de Práctica - Estudio Jurídico Escobar & Asociados*\n\n` +
-             `Nos especializamos en:\n` +
-             `• Derecho Laboral\n` +
-             `• Derecho Civil\n` +
-             `• Derecho de Familia\n` +
-             `• Derecho Comercial\n\n` +
-             `Para solicitar un turno y analizar tu caso en detalle, por favor escribí la palabra *TURNO* o elegí la opción 2.`;
+    case 'iniciar consulta':
+      setConversationState(phoneNumber, 'ESPERANDO_TIPO_CONSULTA');
+      return `📑 *Áreas de Práctica & Consultas*\n\n` +
+             `Seleccioná la materia correspondiente a tu caso:\n\n` +
+             `📌 *1. Alimentos* (Consulta Gratuita)\n` +
+             `📌 *2. Divorcio / Separación* (Consulta Paga - $20.000 ARS)\n` +
+             `📌 *3. Régimen de Comunicación* (Consulta Paga - $20.000 ARS)\n` +
+             `📌 *4. Derecho Laboral / Despidos* (Consulta Gratuita)\n` +
+             `📌 *5. Otros fueros* (Consulta Paga - $20.000 ARS)\n\n` +
+             `💡 _Nota: El valor abonado en consultas pagas es descontable de los honorarios finales en caso de contratación._\n\n` +
+             `Escribí el *número* de la opción o la palabra *MENU* para volver atrás.`;
 
     case '2':
     case 'turno':
-    case 'turnos': {
+    case 'turnos':
+    case 'agendar':
       setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
-      return `📅 *Solicitud de Turno*\n\n` +
-             `Para agendar una reunión presencial o virtual, por favor respondeme en este mismo mensaje tu *nombre completo*.\n\n` +
-             `Si querés cancelar y volver al menú principal, escribí *MENU*.`;
-    }
+      return `📅 *Solicitud y Gestión de Turnos*\n\n` +
+             `Para agendar una reunión presencial o virtual con la abogada, por favor envianos tu *nombre y apellido completo*.\n\n` +
+             `_(Si deseás cancelar y volver al menú principal, escribí *MENU*)_`;
 
     case '3':
-    case 'urgencia':
-    case 'urgencias':
-      return `🚨 *Contacto de Urgencia*\n\n` +
-             `Si te encontrás ante una situación legal urgente, por favor comunicate inmediatamente por llamada telefónica al número directo: *+54 9 11 0000-0000*.`;
+    case 'abogado':
+    case 'hablar con un abogado':
+      return `🚨 *Solicitud de Atención Prioritaria*\n\n` +
+             `Hemos enviado una alerta directa al equipo legal notificando tu solicitud. Te contactaremos a la brevedad dentro de nuestro horario de atención (Lunes a Viernes de 09:00 a 18:00 hs).`;
+
+    case '4':
+    case 'horarios':
+    case 'ubicacion':
+    case 'horarios y ubicacion':
+      return `📍 *Horarios & Ubicación - Estudio Jurídico Escobar & Asociados*\n\n` +
+             `🏢 *Atención Presencial:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
+             `📞 *Atención Telefónica:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
+             `📍 *Oficina Central:* (Reemplazar con la dirección real)\n` +
+             `🗺️ *Google Maps:* (Enlace directo a la ubicación)\n\n` +
+             `Escribí *MENU* para volver al inicio.`;
 
     default:
       return mensajeMenuPrincipal();
@@ -238,11 +272,13 @@ function manejarOpcionMenu(phoneNumber, normalizedText) {
  * @returns {string}
  */
 function mensajeMenuPrincipal() {
-  return `👋 *¡Hola! Bienvenido a **Estudio Jurídico Escobar & Asociados**.*\n\n` +
-         `Por favor, respondé con el *número* o la *palabra* de la opción deseada:\n\n` +
-         `*1. Consulta* - Información sobre nuestras áreas de práctica.\n` +
-         `*2. Turno* - Solicitar una reunión con un abogado.\n` +
-         `*3. Urgencia* - Contacto directo para casos urgentes.`;
+  return `⚖️ *Estudio Jurídico Escobar & Asociados*\n` +
+         `_Asistencia Legal Especializada_\n\n` +
+         `¡Hola! Te damos la bienvenida. Por favor, seleccioná una opción respondiendo con el *número* o la *palabra clave*:\n\n` +
+         `1️⃣ *Iniciar Consulta* (Familia y Laboral)\n` +
+         `2️⃣ *Agendar / Ver Turnos* (Gestión de citas)\n` +
+         `3️⃣ *Hablar con un Abogado* (Atención prioritaria)\n` +
+         `4️⃣ *Horarios y Ubicación* (Dirección y mapa)`;
 }
 
 /**
