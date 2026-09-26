@@ -12,27 +12,44 @@
  */
 
 const ESTADO_INICIAL = 'MENU';
+const TIMEOUT_INACTIVIDAD_MS = 24 * 60 * 60 * 1000; // 24 horas
 
 /**
  * Estructura por usuario:
  * {
  *   state: 'MENU' | 'ESPERANDO_NOMBRE' | 'ESPERANDO_MOTIVO',
- *   tempData: { name?: string }
+ *   tempData: { name?: string },
+ *   lastUpdated: number // Timestamp de la última interacción
  * }
  */
 const conversaciones = new Map();
 
 /**
  * Obtiene (o inicializa) el estado de una conversación por teléfono.
+ * Si la conversación superó el tiempo de inactividad, la reinicia.
  * @param {string} phoneNumber - Número de teléfono del usuario.
- * @returns {{ state: string, tempData: object }}
+ * @returns {{ state: string, tempData: object, lastUpdated: number }}
  */
 export function getOrCreateConversation(phoneNumber) {
+  const now = Date.now();
+
   if (!conversaciones.has(phoneNumber)) {
     conversaciones.set(phoneNumber, {
       state: ESTADO_INICIAL,
       tempData: {},
+      lastUpdated: now,
     });
+  } else {
+    // Si ya existe, verificamos si superó el tiempo de inactividad
+    const conv = conversaciones.get(phoneNumber);
+    if (now - conv.lastUpdated > TIMEOUT_INACTIVIDAD_MS) {
+      console.log(`⏳ [TIMEOUT] Reseteando sesión inactiva de: ${phoneNumber}`);
+      conversaciones.set(phoneNumber, {
+        state: ESTADO_INICIAL,
+        tempData: {},
+        lastUpdated: now,
+      });
+    }
   }
   return conversaciones.get(phoneNumber);
 }
@@ -48,6 +65,7 @@ export function setConversationState(phoneNumber, newState, tempData = {}) {
   conversaciones.set(phoneNumber, {
     state: newState,
     tempData: { ...actual.tempData, ...tempData },
+    lastUpdated: Date.now(),
   });
 }
 
@@ -59,6 +77,7 @@ export function resetConversation(phoneNumber) {
   conversaciones.set(phoneNumber, {
     state: ESTADO_INICIAL,
     tempData: {},
+    lastUpdated: Date.now(),
   });
 }
 
