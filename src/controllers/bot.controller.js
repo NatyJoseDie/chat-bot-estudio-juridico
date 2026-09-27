@@ -17,6 +17,7 @@ import { buscarOCrearCliente } from '../services/clienteService.js';
 import { registrarTurno, actualizarFechaTurno } from '../services/turnoService.js';
 import { sendNewCaseEmail, sendCancellationEmail } from '../services/email.service.js';
 import { parseFechaYHora, createCalendarEvent } from '../services/calendar.service.js';
+import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
 /**
  * Procesa el mensaje entrante del usuario y determina la respuesta correspondiente.
@@ -265,7 +266,7 @@ export async function processUserMessage(phoneNumber, incomingText) {
     // --------------------------------------------------------
     case 'MENU':
     default: {
-      return manejarOpcionMenu(phoneNumber, normalizedText);
+      return await manejarOpcionMenu(phoneNumber, normalizedText);
     }
   }
 }
@@ -278,24 +279,22 @@ export async function processUserMessage(phoneNumber, incomingText) {
  * Maneja las opciones del menú principal (estado MENU).
  * @param {string} phoneNumber
  * @param {string} normalizedText
- * @returns {string} Respuesta al usuario.
+ * @returns {Promise<string>} Respuesta al usuario.
  */
-function manejarOpcionMenu(phoneNumber, normalizedText) {
+async function manejarOpcionMenu(phoneNumber, normalizedText) {
   switch (normalizedText) {
     case '1':
     case 'consulta':
     case 'consultas':
     case 'iniciar consulta':
       setConversationState(phoneNumber, 'ESPERANDO_TIPO_CONSULTA');
-      return `📑 *Áreas de Práctica & Consultas*\n\n` +
-             `Seleccioná la materia correspondiente a tu caso:\n\n` +
-             `📌 *1. Alimentos* (Consulta Gratuita)\n` +
-             `📌 *2. Divorcio / Separación* (Consulta Paga - $20.000 ARS)\n` +
-             `📌 *3. Régimen de Comunicación* (Consulta Paga - $20.000 ARS)\n` +
-             `📌 *4. Derecho Laboral / Despidos* (Consulta Gratuita)\n` +
-             `📌 *5. Otros fueros* (Consulta Paga - $20.000 ARS)\n\n` +
-             `💡 _Nota: El valor abonado en consultas pagas es descontable de los honorarios finales en caso de contratación._\n\n` +
-             `Escribí el *número* de la opción o la palabra *MENU* para volver atrás.`;
+      return `📋 *Seleccioná la materia correspondiente a tu consulta:*\n\n` +
+             `👨‍👩‍👧‍👦 1. *Familia* (Divorcios, Alimentos, Régimen de Comunicación)\n` +
+             `💼 2. *Laboral / Accidentes de Trabajo* (ART)\n` +
+             `📜 3. *Sucesiones*\n` +
+             `🏠 4. *Desalojos*\n` +
+             `👵👨‍🦳 5. *Jubilaciones y Pensiones*\n\n` +
+             `Respondé con el número de la materia deseada para abrir la Ficha de Admisión NATIVA (WhatsApp Flow).`;
 
     case '2':
     case 'turno':
@@ -303,27 +302,31 @@ function manejarOpcionMenu(phoneNumber, normalizedText) {
     case 'agendar':
       setConversationState(phoneNumber, 'SUBMENU_TURNOS');
       return `📅 *Gestión de Turnos*\n\n` +
-             `Seleccioná una opción:\n\n` +
-             `*A.* Agendar un nuevo turno\n` +
-             `*B.* Cancelar un turno existente\n\n` +
-             `_(Escribí la *letra* de la opción o *MENU* para volver)_`;
+             `🅰️ *Agendar Nuevo Turno* (Abre la Ficha / Calendario)\n` +
+             `🅱️ *Cancelar Turno Existente*`;
 
     case '3':
     case 'abogado':
     case 'hablar con un abogado':
+      try {
+        const lawyerPhone = process.env.STUDIO_PHONE || '5491100000000'; // Fallback a completar
+        await sendWhatsAppMessage(lawyerPhone, `🚨 *ALERTA DE PRIORIDAD*\n\nEl cliente con número +${phoneNumber} ha solicitado hablar urgentemente con un abogado.`);
+      } catch (error) {
+        console.error('⚠️ Error al enviar alerta al abogado:', error);
+      }
       return `🚨 *Solicitud de Atención Prioritaria*\n\n` +
-             `Hemos enviado una alerta directa al equipo legal notificando tu solicitud. Te contactaremos a la brevedad dentro de nuestro horario de atención (Lunes a Viernes de 09:00 a 18:00 hs).`;
+             `Hemos notificado a la abogada sobre tu solicitud para que se ponga en contacto con vos a la brevedad dentro del horario comercial.`;
 
     case '4':
     case 'horarios':
     case 'ubicacion':
     case 'horarios y ubicacion':
       return `📍 *Horarios & Ubicación - Estudio Jurídico Escobar & Asociados*\n\n` +
-             `🏢 *Atención Presencial:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
-             `📞 *Atención Telefónica:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
-             `📍 *Oficina Central:* (Reemplazar con la dirección real)\n` +
-             `🗺️ *Google Maps:* (Enlace directo a la ubicación)\n\n` +
-             `Escribí *MENU* para volver al inicio.`;
+             `🕒 *Atención Presencial y Telefónica:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
+             `🏢 *Dirección:* (Ingresar dirección de la oficina)\n` +
+             `🗺️ *Google Maps:* (Enlace directo a Google Maps)\n` +
+             `📞 *Teléfono alternativo:* (Número directo)\n\n` +
+             `Escribí *MENU* para regresar al inicio.`;
 
     default:
       return `⚠️ Lo siento, esa opción no se encuentra vigente o no la entendí.\n\n` +
@@ -341,16 +344,15 @@ function mensajeMenuPrincipal(mostrarAvisoFueraHorario = false) {
   let mensaje = '';
   
   if (mostrarAvisoFueraHorario) {
-    mensaje += `🌙 *Estudio Escobar & Asociados*\nTe recordamos que nuestro horario de atención humana es de Lunes a Viernes de 9:00 a 18:00 hs.\nSin embargo, podés utilizar nuestro asistente virtual las 24hs.\n\n---\n\n`;
+    mensaje += `🌙 *Atención fuera de horario comercial*\nNuestro horario de atención presencial/telefónica es de Lunes a Viernes de 09:00 a 18:00 hs. Podés completar tu consulta o gestión ahora mismo y la abogada evaluará tu ficha para contactarte a primera hora del próximo día hábil.\n-----------------------------------------\n\n`;
   }
   
-  mensaje += `⚖️ *Estudio Jurídico Escobar & Asociados*\n` +
-         `_Asistencia Legal Especializada_\n\n` +
-         `¡Hola! Te damos la bienvenida. Por favor, seleccioná una opción respondiendo con el *número* o la *palabra clave*:\n\n` +
-         `1️⃣ *Iniciar Consulta* (Familia y Laboral)\n` +
-         `2️⃣ *Agendar / Ver Turnos* (Gestión de citas)\n` +
-         `3️⃣ *Hablar con un Abogado* (Atención prioritaria)\n` +
-         `4️⃣ *Horarios y Ubicación* (Dirección y mapa)`;
+  mensaje += `👋 ¡Hola! Bienvenido/a al *Estudio Jurídico Escobar & Asociados*. ⚖️\n\n` +
+         `Por favor, respondé con el número de la opción deseada:\n\n` +
+         `1️⃣ *Iniciar Consulta*\n` +
+         `2️⃣ *Agendar / Ver Turnos*\n` +
+         `3️⃣ *Hablar con un Abogado*\n` +
+         `4️⃣ *Horarios y Ubicación*`;
          
   return mensaje;
 }
