@@ -307,8 +307,9 @@ async function manejarOpcionMenu(phoneNumber, normalizedText) {
     case 'agendar':
       setConversationState(phoneNumber, 'SUBMENU_TURNOS');
       return `📅 *Gestión de Turnos*\n\n` +
-             `🅰️ *Agendar Nuevo Turno* (Abre la Ficha / Calendario)\n` +
-             `🅱️ *Cancelar Turno Existente*`;
+             `🅰️ *Agendar Nuevo Turno*\n` +
+             `🅱️ *Cancelar Turno Existente*\n\n` +
+             `_(Respondé con la letra *A* o *B*, o escribí *MENU* para volver al inicio)_`;
 
     case '3':
     case 'abogado':
