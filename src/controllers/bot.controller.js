@@ -65,14 +65,19 @@ export async function processUserMessage(phoneNumber, incomingText) {
     // --------------------------------------------------------
     case 'ESPERANDO_TIPO_CONSULTA': {
       const opcion = normalizedText;
-      if (['1', '4', 'alimentos', 'laboral'].includes(opcion) || opcion.includes('alimentos') || opcion.includes('laboral') || opcion.includes('despidos')) {
-        setConversationState(phoneNumber, 'MENU');
-        return `✅ *Consulta Gratuita seleccionada*\n` +
-               `Para avanzar con la evaluación de tu caso, ingresá la palabra *TURNO* o responde *2* para completar la ficha y agendar tu cita.`;
-      } else if (['2', '3', '5', 'divorcio', 'separacion', 'regimen', 'comunicacion', 'otros'].some(k => opcion.includes(k) || opcion === k)) {
-        setConversationState(phoneNumber, 'MENU');
-        return `💳 *Consulta Paga seleccionada ($20.000 ARS)*\n` +
-               `El costo cubre la evaluación técnica del caso. Para completar la ficha y recibir el enlace de pago de Mercado Pago, ingresá la palabra *TURNO* o responde *2*.`;
+      // Opción 1 (Familia), Opción 2 (Laboral) -> Gratuitas
+      if (['1', '2', 'familia', 'laboral', 'accidentes'].some(k => opcion.includes(k) || opcion === k)) {
+        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
+        return `✅ *Has seleccionado una materia de Consulta Gratuita.*\n\n` +
+               `Para avanzar con la evaluación de tu caso y agendar tu cita, por favor envianos tu *nombre y apellido completo*.\n\n` +
+               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
+      } 
+      // Opción 3 (Sucesiones), 4 (Desalojos), 5 (Jubilaciones) -> Pagas
+      else if (['3', '4', '5', 'sucesiones', 'desalojos', 'jubilaciones', 'pensiones'].some(k => opcion.includes(k) || opcion === k)) {
+        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
+        return `💳 *Has seleccionado una materia de Consulta Paga ($20.000 ARS)*\n\n` +
+               `El costo cubre la evaluación técnica del caso (descontable si iniciás el trámite con nosotros). Para avanzar y recibir los datos de pago, por favor envianos tu *nombre y apellido completo*.\n\n` +
+               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
       } else {
         return `⚠️ Opción no válida.\n\n` +
                `Escribí el *número* de la opción (del 1 al 5) o la palabra *MENU* para volver atrás.`;
@@ -294,7 +299,7 @@ async function manejarOpcionMenu(phoneNumber, normalizedText) {
              `📜 3. *Sucesiones*\n` +
              `🏠 4. *Desalojos*\n` +
              `👵👨‍🦳 5. *Jubilaciones y Pensiones*\n\n` +
-             `Respondé con el número de la materia deseada para abrir la Ficha de Admisión NATIVA (WhatsApp Flow).`;
+             `Respondé con el *número* de la opción deseada (del 1 al 5) para continuar. Si querés volver atrás, escribí *MENU*.`;
 
     case '2':
     case 'turno':
