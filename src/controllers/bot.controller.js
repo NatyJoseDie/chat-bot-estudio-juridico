@@ -149,7 +149,7 @@ export async function processUserMessage(phoneNumber, incomingText) {
       const resumen_caso = incomingText.trim();
 
       if (resumen_caso.length < 5) {
-        return `⚠️ Por favor, describe con un poco más de detalle el motivo de tu consulta (al menos 5 caracteres).\n\nSi querés volver al menú principal, escribí *MENU*.`;
+        return `⚠️ Por favor, describí con un poco más de detalle el motivo de tu consulta (al menos 5 caracteres).\n\nSi querés volver al menú principal, escribí *MENU*.`;
       }
 
       setConversationState(phoneNumber, 'ESPERANDO_FECHA_HORA', {
@@ -159,13 +159,13 @@ export async function processUserMessage(phoneNumber, incomingText) {
 
       const nombre = tempData.name ? capitalizar(tempData.name) : '';
       return `📝 *${nombre ? nombre + ', ' : ''}muchas gracias por el detalle.*\n\n` +
-             `Ahora por favor indicame *qué día y en qué franja horaria* preferís la reunión (presencial o virtual).\n\n` +
+             `Para finalizar, por favor indicame *qué día y en qué franja horaria* preferís la reunión (presencial o virtual).\n\n` +
              `Algunos ejemplos de cómo escribirme:\n` +
              `• *"Lunes 30/09 a las 10:30 hs"*\n` +
              `• *"Mañana a las 14"*\n` +
-             `• *"30 de septiembre tarde"*\n` +
-             `• *"Viernes 11am"*\n\n` +
-             `Si querés volver al menú principal, escribí *MENU*.`;
+             `• *"30 de septiembre a la tarde"*\n` +
+             `• *"Viernes 11 am"*\n\n` +
+             `Si querés cancelar y volver al menú principal, escribí *MENU*.`;
     }
 
     // --------------------------------------------------------
