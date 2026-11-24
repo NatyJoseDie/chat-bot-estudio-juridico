@@ -1,10 +1,6 @@
 /**
- * Controlador de la lógica del bot de WhatsApp.
- * Maneja estado de conversación por usuario y persistencia en Supabase.
- *
- * Flujo actual:
- *   MENU → ESPERANDO_NOMBRE → ESPERANDO_MOTIVO → ESPERANDO_FECHA_HORA
- *       → (GUARDAR CLIENTE + TURNO) → (CREAR EVENTO GCAL) → (MAIL) → OK
+ * Controlador de la lógica del bot de WhatsApp - Estudio Jurídico Escobar & Asociados
+ * Flujo optimizado con formularios Tally específicos para Familia y derivación directa.
  */
 
 import {
@@ -13,96 +9,152 @@ import {
   resetConversation,
 } from '../services/conversationState.service.js';
 
-import { buscarOCrearCliente } from '../services/clienteService.js';
-import { registrarTurno, actualizarFechaTurno } from '../services/turnoService.js';
-import { sendNewCaseEmail, sendCancellationEmail } from '../services/email.service.js';
-import { parseFechaYHora, createCalendarEvent } from '../services/calendar.service.js';
+import { sendCancellationEmail } from '../services/email.service.js';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
-/**
- * Procesa el mensaje entrante del usuario y determina la respuesta correspondiente.
- *
- * @param {string} phoneNumber  - Número del remitente (formato E.164 sin '+').
- * @param {string} incomingText - El texto del mensaje recibido.
- * @returns {Promise<string>}   El texto que se debe enviar como respuesta al usuario.
- */
+// ============================================================
+// CONFIGURACIÓN DE ENLACES (Tally y Turnos)
+// ============================================================
+const FORMULARIOS_TALLY = {
+  DIVORCIO: 'https://tally.so/r/KYd8Ng',
+  ALIMENTOS: 'https://tally.so/r/VpEl1v',
+  COMUNICACION: 'https://tally.so/r/YjDz7N',
+};
+
+// Si creás un link en Cal.com conectado al Google Calendar del estudio, pegalo acá:
+const LINK_AGENDAR_TURNO = ''; // Ej: 'https://cal.com/estudio-escobar/consulta'
+
+// ============================================================
+// PROCESADOR PRINCIPAL
+// ============================================================
 export async function processUserMessage(phoneNumber, incomingText) {
   const normalizedText = incomingText.trim().toLowerCase();
-
-  // Obtenemos (o inicializamos) el estado actual de la conversación del usuario
   const conversation = getOrCreateConversation(phoneNumber);
   const { state, tempData } = conversation;
 
-  // ============================================================
-  // COMANDO GLOBAL: Volver al menú principal en cualquier momento
-  // ============================================================
-  if (['menu', '0', 'hola', 'buenas', 'buen dia', 'buen día', 'buenas tardes', 'buenas noches'].includes(normalizedText)) {
+  // 1. COMANDO GLOBAL: Volver al menú principal en cualquier momento
+  const saludosYMenu = ['menu', 'menú', '0', 'hola', 'buenas', 'buen dia', 'buen día', 'buenas tardes', 'buenas noches'];
+  if (saludosYMenu.includes(normalizedText)) {
     resetConversation(phoneNumber);
-    const avisoHorario = esFueraDeHorario() && !tempData.warnedOutOfHours;
-    if (avisoHorario) {
-      setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: true });
-    }
+    const avisoHorario = esFueraDeHorario();
+    setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: avisoHorario });
     return mensajeMenuPrincipal(avisoHorario);
   }
 
-  // ============================================================
-  // Si el usuario es nuevo (o no tiene estado) y no escribió "hola" ni "menu"
-  // ============================================================
-  if (state === 'MENU' && !['1', '2', '3', '4', 'consulta', 'consultas', 'iniciar consulta', 'turno', 'turnos', 'agendar', 'abogado', 'hablar con un abogado', 'horarios', 'ubicacion', 'horarios y ubicacion'].includes(normalizedText)) {
-      const avisoHorario = esFueraDeHorario() && !tempData.warnedOutOfHours;
-      if (avisoHorario) {
-        setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: true });
-      }
-      return mensajeMenuPrincipal(avisoHorario);
+  // 2. ATAJOS DIRECTOS: Si escribe el trámite de familia desde cualquier lado
+  if (normalizedText.includes('divorcio')) {
+    resetConversation(phoneNumber);
+    return respuestaFormularioFamilia('Divorcio / Separación', FORMULARIOS_TALLY.DIVORCIO);
+  }
+  if (normalizedText.includes('alimento') || normalizedText.includes('cuota')) {
+    resetConversation(phoneNumber);
+    return respuestaFormularioFamilia('Alimentos y Cuota Alimentaria', FORMULARIOS_TALLY.ALIMENTOS);
+  }
+  if (normalizedText.includes('comunicacion') || normalizedText.includes('comunicación') || normalizedText.includes('visita')) {
+    resetConversation(phoneNumber);
+    return respuestaFormularioFamilia('Régimen de Comunicación y Contacto', FORMULARIOS_TALLY.COMUNICACION);
   }
 
-  // ============================================================
-  // MAQUINA DE ESTADOS
-  // ============================================================
+  // 3. MÁQUINA DE ESTADOS
   switch (state) {
     // --------------------------------------------------------
     // ESTADO: ESPERANDO_TIPO_CONSULTA
     // --------------------------------------------------------
     case 'ESPERANDO_TIPO_CONSULTA': {
-      const opcion = normalizedText;
-      // Opción 1 (Familia), Opción 2 (Laboral) -> Gratuitas
-      if (['1', '2', 'familia', 'laboral', 'accidentes'].some(k => opcion.includes(k) || opcion === k)) {
-        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
-        return `✅ *Has seleccionado una materia de Consulta Gratuita.*\n\n` +
-               `Para avanzar con la evaluación de tu caso y agendar tu cita, por favor envianos tu *nombre y apellido completo*.\n\n` +
-               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
-      } 
-      // Opción 3 (Sucesiones), 4 (Desalojos), 5 (Jubilaciones) -> Pagas
-      else if (['3', '4', '5', 'sucesiones', 'desalojos', 'jubilaciones', 'pensiones'].some(k => opcion.includes(k) || opcion === k)) {
-        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
-        return `💳 *Has seleccionado una materia de Consulta Paga ($20.000 ARS)*\n\n` +
-               `El costo cubre la evaluación técnica del caso (descontable si iniciás el trámite con nosotros). Para avanzar y recibir los datos de pago, por favor envianos tu *nombre y apellido completo*.\n\n` +
-               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
-      } else {
-        return `⚠️ Opción no válida.\n\n` +
-               `Escribí el *número* de la opción (del 1 al 5) o la palabra *MENU* para volver atrás.`;
+      // Opción 1: Familia -> Abre submenú con los 3 formularios de Tally
+      if (normalizedText === '1' || normalizedText.includes('familia')) {
+        setConversationState(phoneNumber, 'SUBMENU_FAMILIA');
+        return `👨‍👩‍👧‍👦 *Derecho de Familia*\n` +
+          `✅ *Primera evaluación sin cargo.*\n\n` +
+          `Seleccioná el motivo específico de tu consulta para enviarte la ficha correspondiente:\n\n` +
+          `🅰️ *Divorcio / Separación*\n` +
+          `🅱️ *Alimentos y Cuota Alimentaria*\n` +
+          `©️ *Régimen de Comunicación y Contacto* (escribí *C*)\n\n` +
+          `Respondé con la letra *A*, *B* o *C* _(o escribí *MENU* para volver atrás)_`;
       }
+
+      // Opción 2: Laboral / ART (Gratuita - deriva a coordinación)
+      if (['2', 'laboral', 'trabajo', 'despido', 'art', 'accidente'].some(k => normalizedText.includes(k))) {
+        resetConversation(phoneNumber);
+        await notificarConsultaGeneral(phoneNumber, 'Derecho Laboral / ART (Consulta Gratuita)');
+        return `💼 *Consulta Derecho Laboral / ART*\n` +
+          `✅ *Primera evaluación sin cargo.*\n\n` +
+          `Ya notificamos a la abogada sobre tu consulta laboral para que se comunique con vos a la brevedad.\n\n` +
+          `_(Escribí *MENU* si necesitás volver al inicio)._`;
+      }
+
+      // Opciones 3, 4, 5: Sucesiones, Desalojos, Jubilaciones (Pagas)
+      if (['3', '4', '5', 'sucesiones', 'sucesion', 'desalojos', 'desalojo', 'jubilaciones', 'jubilacion', 'pensiones'].some(k => normalizedText.includes(k))) {
+        resetConversation(phoneNumber);
+        await notificarConsultaGeneral(phoneNumber, `Consulta Patrimonial/Previsional (Opción: ${incomingText.trim()})`);
+        return `⚖️ *Consulta Patrimonial / Previsional*\n` +
+          `_(Sucesiones, Desalojos, Jubilaciones y Pensiones)_\n\n` +
+          `💳 *Valor de la consulta técnica:* $20.000 ARS *(descontable si iniciás el trámite con el estudio)*.\n\n` +
+          `Ya dimos aviso al equipo del estudio para coordinar tu evaluación y enviarte los datos.\n\n` +
+          `_(Escribí *MENU* para volver al inicio)._`;
+      }
+
+      return `⚠️ Opción no válida.\n\n` +
+        `Respondé con un *número del 1 al 5* según tu consulta, o escribí *MENU* para volver atrás.`;
+    }
+
+    // --------------------------------------------------------
+    // ESTADO: SUBMENU_FAMILIA (Los 3 formularios de Tally)
+    // --------------------------------------------------------
+    case 'SUBMENU_FAMILIA': {
+      if (normalizedText === 'a' || normalizedText.includes('divorcio')) {
+        resetConversation(phoneNumber);
+        return respuestaFormularioFamilia('Divorcio / Separación', FORMULARIOS_TALLY.DIVORCIO);
+      }
+
+      if (normalizedText === 'b' || normalizedText.includes('alimento') || normalizedText.includes('cuota')) {
+        resetConversation(phoneNumber);
+        return respuestaFormularioFamilia('Alimentos y Cuota Alimentaria', FORMULARIOS_TALLY.ALIMENTOS);
+      }
+
+      if (normalizedText === 'c' || normalizedText.includes('comunicacion') || normalizedText.includes('comunicación') || normalizedText.includes('contacto')) {
+        resetConversation(phoneNumber);
+        return respuestaFormularioFamilia('Régimen de Comunicación y Contacto', FORMULARIOS_TALLY.COMUNICACION);
+      }
+
+      return `⚠️ Opción no válida.\n\n` +
+        `Por favor respondé con la letra *A* (Divorcio), *B* (Alimentos) o *C* (Régimen de Comunicación), o escribí *MENU* para volver al inicio.`;
     }
 
     // --------------------------------------------------------
     // ESTADO: SUBMENU_TURNOS
     // --------------------------------------------------------
     case 'SUBMENU_TURNOS': {
-      const opcion = normalizedText;
-      if (opcion === 'a' || opcion.includes('agendar') || opcion.includes('nuevo')) {
-        setConversationState(phoneNumber, 'ESPERANDO_NOMBRE');
+      if (normalizedText === 'a' || normalizedText.includes('agendar') || normalizedText.includes('nuevo')) {
+        resetConversation(phoneNumber);
+
+        if (LINK_AGENDAR_TURNO) {
+          return `📅 *Agendar Nuevo Turno*\n\n` +
+            `Elegí el día y horario disponible (presencial o virtual) directamente en nuestra agenda online:\n` +
+            `👉 ${LINK_AGENDAR_TURNO}\n\n` +
+            `_(Recibirás la confirmación automática. Escribí *MENU* para volver al inicio)._`;
+        }
+
+        await notificarConsultaGeneral(phoneNumber, 'Solicitud de Turno Presencial/Virtual');
+
         return `📅 *Agendar Nuevo Turno*\n\n` +
-               `Para agendar una reunión presencial o virtual con la abogada, por favor envianos tu *nombre y apellido completo*.\n\n` +
-               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
-      } else if (opcion === 'b' || opcion.includes('cancelar')) {
+          `Ya notificamos a la secretaria del estudio para coordinar un día y horario con vos.\n\n` +
+          `Si tu consulta es de *Familia* y aún no completaste la ficha previa, podés adelantarla acá:\n` +
+          `• *Divorcio:* ${FORMULARIOS_TALLY.DIVORCIO}\n` +
+          `• *Alimentos:* ${FORMULARIOS_TALLY.ALIMENTOS}\n` +
+          `• *Comunicación y Contacto:* ${FORMULARIOS_TALLY.COMUNICACION}\n\n` +
+          `_(Escribí *MENU* para volver al inicio)._`;
+      }
+
+      if (normalizedText === 'b' || normalizedText.includes('cancelar')) {
         setConversationState(phoneNumber, 'ESPERANDO_NOMBRE_CANCELACION');
         return `❌ *Cancelar Turno*\n\n` +
-               `Para procesar la cancelación, por favor indicanos tu *nombre y apellido completo* con el que registraste el turno.\n\n` +
-               `_(Si deseás volver al menú principal, escribí *MENU*)_`;
-      } else {
-        return `⚠️ Opción no válida.\n\n` +
-               `Escribí la letra *A* para agendar o *B* para cancelar (o *MENU* para volver al inicio).`;
+          `Por favor, escribinos tu *nombre y apellido completo* con el que registraste el turno.\n\n` +
+          `_(Escribí *MENU* para volver al inicio)._`;
       }
+
+      return `⚠️ Opción no válida.\n\n` +
+        `Escribí *A* para agendar un turno o *B* para cancelar (o *MENU* para volver al inicio).`;
     }
 
     // --------------------------------------------------------
@@ -111,159 +163,19 @@ export async function processUserMessage(phoneNumber, incomingText) {
     case 'ESPERANDO_NOMBRE_CANCELACION': {
       const nombre = incomingText.trim();
       if (nombre.length < 2) {
-        return `⚠️ Por favor, escribí tu nombre completo (al menos 2 caracteres).\n\nSi querés volver al menú principal, escribí *MENU*.`;
+        return `⚠️ Por favor, escribí tu nombre y apellido completo.\n\n_(O escribí *MENU* para volver atrás)._`;
       }
 
-      // Notificar al estudio internamente (opcionalmente podríamos mandar un mail)
       try {
         await sendCancellationEmail(phoneNumber, capitalizar(nombre));
       } catch (error) {
         console.error(`⚠️ Error al enviar mail de cancelación para ${phoneNumber}:`, error);
       }
-      
-      // Por ahora confirmamos la recepción al cliente y reseteamos el flujo
+
       resetConversation(phoneNumber);
       return `✅ *Solicitud Recibida*\n\n` +
-             `Hemos notificado al equipo sobre la cancelación del turno a nombre de *${capitalizar(nombre)}*.\n` +
-             `Un asesor lo procesará a la brevedad para liberar la agenda.\n\n` +
-             `¡Gracias por avisarnos!\n\n` +
-             `Si necesitás algo más, escribí *MENU*.`;
-    }
-
-    // --------------------------------------------------------
-    // ESTADO: ESPERANDO_NOMBRE
-    // --------------------------------------------------------
-    case 'ESPERANDO_NOMBRE': {
-      const nombre = incomingText.trim();
-
-      if (nombre.length < 2) {
-        return `⚠️ Por favor, escribí tu nombre completo (al menos 2 caracteres).\n\nSi querés volver al menú principal, escribí *MENU*.`;
-      }
-
-      setConversationState(phoneNumber, 'ESPERANDO_MOTIVO', { name: nombre });
-
-      return `✅ *Perfecto, ${capitalizar(nombre)}.*\n\n` +
-             `Ahora contame brevemente cuál es el *motivo de tu consulta* para agendar el turno.\n\n` +
-             `Si querés volver al menú principal, escribí *MENU*.`;
-    }
-
-    // --------------------------------------------------------
-    // ESTADO: ESPERANDO_MOTIVO
-    // --------------------------------------------------------
-    case 'ESPERANDO_MOTIVO': {
-      const resumen_caso = incomingText.trim();
-
-      if (resumen_caso.length < 5) {
-        return `⚠️ Por favor, describí con un poco más de detalle el motivo de tu consulta (al menos 5 caracteres).\n\nSi querés volver al menú principal, escribí *MENU*.`;
-      }
-
-      setConversationState(phoneNumber, 'ESPERANDO_FECHA_HORA', {
-        ...tempData,
-        resumen_caso,
-      });
-
-      const nombre = tempData.name ? capitalizar(tempData.name) : '';
-      return `📝 *${nombre ? nombre + ', ' : ''}muchas gracias por el detalle.*\n\n` +
-             `Para finalizar, por favor indicame *qué día y en qué franja horaria* preferís la reunión (presencial o virtual).\n\n` +
-             `Algunos ejemplos de cómo escribirme:\n` +
-             `• *"Lunes 30/09 a las 10:30 hs"*\n` +
-             `• *"Mañana a las 14"*\n` +
-             `• *"30 de septiembre a la tarde"*\n` +
-             `• *"Viernes 11 am"*\n\n` +
-             `Si querés cancelar y volver al menú principal, escribí *MENU*.`;
-    }
-
-    // --------------------------------------------------------
-    // ESTADO: ESPERANDO_FECHA_HORA
-    // Tiene el nombre y el motivo. Ahora parseamos fecha/hora y guardamos TODO.
-    // --------------------------------------------------------
-    case 'ESPERANDO_FECHA_HORA': {
-      const textoFecha = incomingText.trim();
-      const clienteNombreCompleto = tempData.name;
-      const resumen_caso = tempData.resumen_caso;
-
-      try {
-        // 1) Intentamos parsear el texto libre del usuario
-        const fechaParseada = parseFechaYHora(textoFecha);
-        const fechaTurnoISO = fechaParseada.start.toISOString();
-
-        // 2) Creamos / buscamos cliente
-        const { cliente, esNuevo } = await buscarOCrearCliente({
-          telefono: phoneNumber,
-          nombre_completo: clienteNombreCompleto,
-          email: null,
-        });
-
-        // 3) Damos de ALTA el turno SIN google_event_id (aún no lo tenemos)
-        //    y con fecha_turno ya seteada.
-        let turno = await registrarTurno({
-          cliente_id: cliente.id,
-          resumen_caso,
-          fecha_turno: fechaTurnoISO,
-          google_event_id: null,
-          estado: 'pendiente',
-        });
-
-        // 4) Intentamos crear el evento en Google Calendar.
-        //    Si falla (por credenciales, permisos, etc.) NO ROMPEMOS el flujo:
-        //    simplemente lo logueamos y seguimos (el turno ya está guardado).
-        let gcalEvent = null;
-        try {
-          gcalEvent = await createCalendarEvent(
-            turno,
-            cliente,
-            { start: fechaParseada.start, end: fechaParseada.end },
-            fechaParseada.textoHumano
-          );
-
-          // 4.b) Actualizamos el turno con el google_event_id y re-asignamos fecha
-          turno = await actualizarFechaTurno(turno.id, {
-            google_event_id: gcalEvent.id,
-            fecha_turno: fechaTurnoISO,
-          });
-        } catch (gcalError) {
-          console.warn(
-            `⚠️ El turno se guardó OK, pero falló la creación del evento en Google Calendar:`,
-            gcalError.message || gcalError
-          );
-        }
-
-        // 5) Notificamos al estudio por mail
-        try {
-          await sendNewCaseEmail(cliente, {
-            ...turno,
-            _gcalLink: gcalEvent?.htmlLink || null,
-            _gcalMeetLink: gcalEvent?.hangoutLink || null,
-            _fechaHumano: fechaParseada.textoHumano,
-          });
-        } catch (emailError) {
-          console.warn(
-            `⚠️ El turno se guardó OK, pero falló el envío de mail al estudio:`,
-            emailError.message || emailError
-          );
-        }
-
-        // 6) Volvemos al usuario al menú y le confirmamos TODO
-        resetConversation(phoneNumber);
-
-        return `🎉 *${capitalizar(clienteNombreCompleto)}, tu solicitud se registró correctamente.*\n\n` +
-               `📋 *Resumen del turno:*\n` +
-               `• Cliente: ${clienteNombreCompleto}\n` +
-               `• Motivo: ${resumen_caso}\n` +
-               `• 📅 Fecha propuesta: ${fechaParseada.textoHumano}\n\n` +
-               `${gcalEvent?.htmlLink ? `• 📅 [Evento agregado al calendario de Estudio Escobar & Asociados](${gcalEvent.htmlLink})\n` : ''}` +
-               `${gcalEvent?.hangoutLink ? `• 💻 [Enlace de Meet para reunión virtual](${gcalEvent.hangoutLink})\n\n` : (gcalEvent ? '\n' : '')}` +
-               `A la brevedad un asesor de *Estudio Jurídico Escobar & Asociados* se pondrá en contacto para confirmar el horario o proponer otra alternativa si la franja no estuviera disponible.\n\n` +
-               `${esNuevo ? '🆕 Además, te dimos de alta en nuestra base de clientes.\n\n' : ''}` +
-               `Si tenés otra consulta, volvé al menú escribiendo *MENU*.`;
-
-      } catch (error) {
-        console.error(`❌ Error al procesar turno para ${phoneNumber}:`, error);
-        resetConversation(phoneNumber);
-        return `⚠️ *Ocurrió un error interno al registrar tu turno.*\n\n` +
-               `Por favor, volvé a intentarlo en unos minutos o comunicate directamente al número de contacto de urgencia: *+54 9 11 0000-0000*.\n\n` +
-               `Si querés volver al menú principal, escribí *MENU*.`;
-      }
+        `Notificamos al estudio sobre la cancelación del turno a nombre de *${capitalizar(nombre)}* para liberar la agenda.\n\n` +
+        `¡Muchas gracias por avisar! Escribí *MENU* si necesitás otra gestión.`;
     }
 
     // --------------------------------------------------------
@@ -271,35 +183,29 @@ export async function processUserMessage(phoneNumber, incomingText) {
     // --------------------------------------------------------
     case 'MENU':
     default: {
-      return await manejarOpcionMenu(phoneNumber, normalizedText);
+      return await manejarOpcionMenu(phoneNumber, normalizedText, tempData);
     }
   }
 }
 
 // ============================================================
-// FUNCIONES AUXILIARES
+// OPCIONES DEL MENÚ PRINCIPAL
 // ============================================================
-
-/**
- * Maneja las opciones del menú principal (estado MENU).
- * @param {string} phoneNumber
- * @param {string} normalizedText
- * @returns {Promise<string>} Respuesta al usuario.
- */
-async function manejarOpcionMenu(phoneNumber, normalizedText) {
+async function manejarOpcionMenu(phoneNumber, normalizedText, tempData) {
   switch (normalizedText) {
     case '1':
     case 'consulta':
     case 'consultas':
     case 'iniciar consulta':
       setConversationState(phoneNumber, 'ESPERANDO_TIPO_CONSULTA');
-      return `📋 *Seleccioná la materia correspondiente a tu consulta:*\n\n` +
-             `👨‍👩‍👧‍👦 1. *Familia* (Divorcios, Alimentos, Régimen de Comunicación)\n` +
-             `💼 2. *Laboral / Accidentes de Trabajo* (ART)\n` +
-             `📜 3. *Sucesiones*\n` +
-             `🏠 4. *Desalojos*\n` +
-             `👵👨‍🦳 5. *Jubilaciones y Pensiones*\n\n` +
-             `Respondé con el *número* de la opción deseada (del 1 al 5) para continuar. Si querés volver atrás, escribí *MENU*.`;
+      return `📋 *Seleccioná la materia de tu consulta:*\n\n` +
+        `1️⃣ *Familia* (Divorcio, Alimentos, Régimen de Comunicación)\n` +
+        `2️⃣ *Laboral / Accidentes de Trabajo (ART)*\n` +
+        `3️⃣ *Sucesiones*\n` +
+        `4️⃣ *Desalojos*\n` +
+        `5️⃣ *Jubilaciones y Pensiones*\n\n` +
+        `Respondé con el *número* de la opción (del 1 al 5) para continuar.\n` +
+        `_(O escribí *MENU* para volver atrás)._`;
 
     case '2':
     case 'turno':
@@ -307,88 +213,92 @@ async function manejarOpcionMenu(phoneNumber, normalizedText) {
     case 'agendar':
       setConversationState(phoneNumber, 'SUBMENU_TURNOS');
       return `📅 *Gestión de Turnos*\n\n` +
-             `🅰️ *Agendar Nuevo Turno*\n` +
-             `🅱️ *Cancelar Turno Existente*\n\n` +
-             `_(Respondé con la letra *A* o *B*, o escribí *MENU* para volver al inicio)_`;
+        `🅰️ *Agendar Nuevo Turno*\n` +
+        `🅱️ *Cancelar Turno Existente*\n\n` +
+        `Respondé con la letra *A* o *B* (o escribí *MENU* para volver al inicio).`;
 
     case '3':
     case 'abogado':
     case 'hablar con un abogado':
-      try {
-        const lawyerPhone = process.env.STUDIO_PHONE || '5491100000000'; // Fallback a completar
-        await sendWhatsAppMessage(lawyerPhone, `🚨 *ALERTA DE PRIORIDAD*\n\nEl cliente con número +${phoneNumber} ha solicitado hablar urgentemente con un abogado.`);
-      } catch (error) {
-        console.error('⚠️ Error al enviar alerta al abogado:', error);
-      }
+      await notificarConsultaGeneral(phoneNumber, '🚨 ALERTA DE PRIORIDAD: Solicita hablar con un abogado');
       return `🚨 *Solicitud de Atención Prioritaria*\n\n` +
-             `Hemos notificado a la abogada sobre tu solicitud para que se ponga en contacto con vos a la brevedad dentro del horario comercial.`;
+        `Ya notificamos a la abogada sobre tu mensaje para que se comunique con vos a la brevedad dentro del horario comercial (Lunes a Viernes de 09:00 a 18:00 hs).`;
 
     case '4':
     case 'horarios':
     case 'ubicacion':
     case 'horarios y ubicacion':
-      return `📍 *Horarios & Ubicación - Estudio Jurídico Escobar & Asociados*\n\n` +
-             `🕒 *Atención Presencial y Telefónica:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
-             `🏢 *Dirección:* (Ingresar dirección de la oficina)\n` +
-             `🗺️ *Google Maps:* (Enlace directo a Google Maps)\n` +
-             `📞 *Teléfono alternativo:* (Número directo)\n\n` +
-             `Escribí *MENU* para regresar al inicio.`;
+      return `📍 *Horarios y Ubicación - Estudio Jurídico Escobar & Asociados*\n\n` +
+        `🕒 *Atención:* Lunes a Viernes de 09:00 a 18:00 hs.\n` +
+        `🏢 *Dirección:* (Completar dirección del estudio)\n` +
+        `🗺️ *Google Maps:* (Completar enlace de Maps)\n\n` +
+        `Escribí *MENU* para volver al inicio.`;
 
-    default:
-      return `⚠️ Lo siento, esa opción no se encuentra vigente o no la entendí.\n\n` +
-             `Por favor, escribí un *número del 1 al 4* o la palabra *MENU* para ver las opciones disponibles.`;
+    default: {
+      const avisoHorario = esFueraDeHorario() && !tempData?.warnedOutOfHours;
+      if (avisoHorario) {
+        setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: true });
+      }
+      return mensajeMenuPrincipal(avisoHorario);
+    }
   }
 }
 
-/**
- * Devuelve el mensaje de bienvenida con el menú principal.
- * Agrega un prefijo si se escribe fuera del horario comercial, y solo lo hace la primera vez.
- * @param {boolean} mostrarAvisoFueraHorario Indica si se debe añadir el aviso de fuera de horario.
- * @returns {string}
- */
+// ============================================================
+// HELPERS
+// ============================================================
+function respuestaFormularioFamilia(tituloTramite, linkTally) {
+  return `👨‍👩‍👧‍👦 *Ficha de Admisión: ${tituloTramite}*\n` +
+    `✅ *Primera evaluación sin cargo.*\n\n` +
+    `Completá este breve formulario confidencial para que la abogada analice tu caso antes de contactarte:\n` +
+    `👉 ${linkTally}\n\n` +
+    `_(Una vez enviado, nos llega automáticamente y te escribimos a la brevedad. Escribí *MENU* si necesitás volver al inicio)._`;
+}
+
+async function notificarConsultaGeneral(phoneNumber, detalle) {
+  try {
+    const lawyerPhone = process.env.STUDIO_PHONE;
+    if (!lawyerPhone) return;
+    await sendWhatsAppMessage(
+      lawyerPhone,
+      `📩 *NUEVA SOLICITUD EN EL BOT*\n• Teléfono: +${phoneNumber}\n• Motivo: ${detalle}`
+    );
+  } catch (error) {
+    console.error('⚠️ Error al notificar al estudio por WhatsApp:', error);
+  }
+}
+
 function mensajeMenuPrincipal(mostrarAvisoFueraHorario = false) {
   let mensaje = '';
-  
+
   if (mostrarAvisoFueraHorario) {
-    mensaje += `🌙 *Atención fuera de horario comercial*\nNuestro horario de atención presencial/telefónica es de Lunes a Viernes de 09:00 a 18:00 hs. Podés completar tu consulta o gestión ahora mismo y la abogada evaluará tu ficha para contactarte a primera hora del próximo día hábil.\n-----------------------------------------\n\n`;
+    mensaje += `🌙 *Atención fuera de horario comercial*\n` +
+      `Nuestro horario presencial/telefónico es de Lunes a Viernes de 09:00 a 18:00 hs. Podés completar tu ficha ahora mismo y la abogada la evaluará a primera hora del próximo día hábil.\n` +
+      `-----------------------------------------\n\n`;
   }
-  
+
   mensaje += `👋 ¡Hola! Bienvenido/a al *Estudio Jurídico Escobar & Asociados*. ⚖️\n\n` +
-         `Por favor, respondé con el número de la opción deseada:\n\n` +
-         `1️⃣ *Iniciar Consulta*\n` +
-         `2️⃣ *Agendar / Ver Turnos*\n` +
-         `3️⃣ *Hablar con un Abogado*\n` +
-         `4️⃣ *Horarios y Ubicación*`;
-         
+    `Por favor, respondé con el *número* de la opción deseada:\n\n` +
+    `1️⃣ *Iniciar Consulta*\n` +
+    `2️⃣ *Agendar / Cancelar Turno*\n` +
+    `3️⃣ *Hablar con un Abogado*\n` +
+    `4️⃣ *Horarios y Ubicación*`;
+
   return mensaje;
 }
 
-/**
- * Capitaliza la primera letra de un texto.
- * @param {string} texto
- * @returns {string}
- */
 function capitalizar(texto) {
   if (!texto) return '';
-  return texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
+  return texto
+    .split(' ')
+    .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+    .join(' ');
 }
 
-/**
- * Verifica si la hora actual en Argentina está fuera del horario comercial.
- * Horario comercial: Lunes a Viernes de 9:00 a 18:00 hs.
- * @returns {boolean}
- */
 function esFueraDeHorario() {
-  const options = { timeZone: 'America/Buenos_Aires', hour12: false, hour: 'numeric', weekday: 'numeric' };
-  // Usamos el locale en-US para asegurar que el parsing sea predecible
-  const argTimeStr = new Date().toLocaleString("en-US", { timeZone: "America/Buenos_Aires" });
+  const argTimeStr = new Date().toLocaleString('en-US', { timeZone: 'America/Buenos_Aires' });
   const argDate = new Date(argTimeStr);
-  
-  const day = argDate.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
-  const hour = argDate.getHours(); // 0 a 23
-
-  const isWeekend = day === 0 || day === 6;
-  const isOutHours = hour < 9 || hour >= 18;
-
-  return isWeekend || isOutHours;
+  const day = argDate.getDay(); // 0 = Dom, 6 = Sáb
+  const hour = argDate.getHours();
+  return day === 0 || day === 6 || hour < 9 || hour >= 18;
 }
