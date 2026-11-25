@@ -179,6 +179,30 @@ export async function processUserMessage(phoneNumber, incomingText) {
     }
 
     // --------------------------------------------------------
+    // ESTADO: POST_TALLY (Respuesta tras enviar formulario)
+    // --------------------------------------------------------
+    case 'POST_TALLY': {
+      const afirmaciones = ['si', 'sí', 's', 'quiero', 'otra', 'otra consulta', 'dale', 'ok'];
+      const negaciones = ['no', 'n', 'nada', 'eso es todo', 'listo', 'gracias', 'muchas gracias', 'no gracias'];
+
+      if (afirmaciones.includes(normalizedText)) {
+        resetConversation(phoneNumber);
+        const avisoHorario = esFueraDeHorario();
+        setConversationState(phoneNumber, 'MENU', { warnedOutOfHours: avisoHorario });
+        return mensajeMenuPrincipal(avisoHorario);
+      }
+
+      if (negaciones.includes(normalizedText)) {
+        resetConversation(phoneNumber);
+        return `🙏 *¡Muchas gracias por comunicarte con Estudio Jurídico Escobar & Asociados!*\n\n` +
+          `La abogada ya recibió toda tu información y se va a contactar con vos a la brevedad dentro de nuestro horario de atención (Lunes a Viernes de 09:00 a 18:00 hs).\n\n` +
+          `_(Si en otro momento necesitás hacer una nueva gestión, escribinos *MENU*)._`;
+      }
+
+      return `Por favor, respondé *SÍ* (o escribí *MENU*) si querés hacer otra consulta, o *NO* para finalizar.`;
+    }
+
+    // --------------------------------------------------------
     // ESTADO: MENU (default)
     // --------------------------------------------------------
     case 'MENU':
