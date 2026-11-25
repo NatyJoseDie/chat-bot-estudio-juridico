@@ -2,6 +2,7 @@ import express from 'express';
 import healthRouter from './routes/health.routes.js';
 import privacyRouter from './routes/privacy.routes.js';
 import webhookRouter from './routes/webhook.routes.js';
+import tallyRouter from './routes/tally.routes.js';
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 app.use('/api', healthRouter);
 app.use('/privacy', privacyRouter);
+app.use('/webhook/tally', tallyRouter);
 app.use('/webhook', webhookRouter);
 
 // Manejador global de 404 (SIEMPRE al final)
