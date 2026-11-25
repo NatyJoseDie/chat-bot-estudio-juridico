@@ -2,14 +2,23 @@ import { Router } from 'express';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
 const router = Router();
+const processedEvents = new Set();
 
 // POST /webhook/tally
 router.post('/', async (req, res) => {
-    // Respondemos 200 inmediatamente a Tally para que no reintente
     res.status(200).json({ received: true });
 
     try {
         const payload = req.body;
+        const eventId = payload?.eventId;
+
+        // Evita procesar dos veces el mismo envío si Tally reintenta
+        if (eventId) {
+            if (processedEvents.has(eventId)) return;
+            processedEvents.add(eventId);
+            setTimeout(() => processedEvents.delete(eventId), 10 * 60 * 1000);
+        }
+
         const formName = payload?.data?.formName || 'Consulta Jurídica';
         const fields = payload?.data?.fields || [];
 
@@ -19,7 +28,6 @@ router.post('/', async (req, res) => {
             const pregunta = field.label || 'Campo';
             let valor = field.value;
 
-            // Traduce los IDs de opciones múltiples o desplegables al texto real
             if (Array.isArray(valor) && field.options) {
                 valor = valor
                     .map(id => field.options.find(opt => opt.id === id)?.text || id)
